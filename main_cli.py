@@ -25,20 +25,20 @@ def ourworldindata(radio_valor):
 
     for i in range(len(ourworldindata_country)):
         for j in ourworldindata_country[i]:
-            run_risk_diagrams('ourworldindata', 'False', None, None, radio_valor, j)
+            run_risk_diagrams('ourworldindata', None, None, radio_valor, j)
 
 if __name__ == "__main__":
 
     #radio_valor =  0 None | 1 last_days | 2 html 
     radio_valor = 1
-    run_risk_diagrams('brasil_regions', 'False', None, None, radio_valor, None)
-    run_risk_diagrams('recife', 'False', None, None, radio_valor, None)
-    run_risk_diagrams('brasil', 'False', None, None, radio_valor, None)
+    run_risk_diagrams('brasil_regions', None, None, radio_valor, None)
+    run_risk_diagrams('recife', None, None, radio_valor, None)
+    run_risk_diagrams('brasil', None, None, radio_valor, None)
     ourworldindata(radio_valor)
     radio_valor = 2
-    run_risk_diagrams('brasil_regions', 'False', None, None, radio_valor, None)
-    run_risk_diagrams('recife', 'False', None, None, radio_valor, None)
-    run_risk_diagrams('brasil', 'False', None, None, radio_valor, None)
+    run_risk_diagrams('brasil_regions', None, None, radio_valor, None)
+    run_risk_diagrams('recife', None, None, radio_valor, None)
+    run_risk_diagrams('brasil', None, None, radio_valor, None)
     ourworldindata(radio_valor)
    
     sys.exit()
