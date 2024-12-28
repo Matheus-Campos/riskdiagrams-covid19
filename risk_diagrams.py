@@ -174,185 +174,158 @@ def run_risk_diagrams(region_id, file_others_cases, file_others_pop, radio_valor
     except AttributeError:
         print("Error! Not found file or could not download!")
 
-    data = pd.read_excel(filename, sheet_name=sheet_name)
+    """
+    The cumulative cases excel file has a date column and a column for each region.
+    The first column values are the dates, and the rest of the columns values are the cumulative number of cases per region on that date.
+
+    The population excel file has a column for each region and the total population of that region at the line below it.
+
+    The regions in the population excel file may not match all the regions in the cumulative cases excel file. This is because some regions do not have data available.
+    """
+    cumulative_cases = pd.read_excel(filename, sheet_name=sheet_name)
+    dates = pd.to_datetime(cumulative_cases['date']).dt.strftime('%d/%m/%Y').to_numpy()
     population = pd.read_excel(filename_population)
-    dia = pd.to_datetime(data['date']).dt.strftime('%d/%m/%Y')
-    dia = dia.to_numpy()
-    region = population.columns
 
-    for ID in range(len(region)):
-        cumulative_cases = data[region[ID]]
-        cumulative_cases = cumulative_cases.to_numpy()
-        new_cases = np.zeros((len(cumulative_cases)), dtype=int)
-        for i in range(len(cumulative_cases)):
-            if i != 0:
-                new_cases[i] = cumulative_cases[i] - \
-                    cumulative_cases[i - 1]
-                
-        p = np.zeros((len(new_cases)), dtype=float)
-        for i in range(7, len(new_cases)):
-            div = 0
-            aux = new_cases[i - 5] + new_cases[i - 6] + new_cases[i - 7]
-            if aux == 0:
-                div = 1
-            else:
-                div = aux
-            p[i] = min((new_cases[i] + new_cases[i - 1] +
-                        new_cases[i - 2]) / div, 4)
+    for region in population.columns:
+        region_cumulative_cases = cumulative_cases[region].to_numpy()
 
-        p_seven = np.zeros((len(new_cases)), dtype=float)
-        n_14_days = np.zeros((len(new_cases)), dtype=float)
-        a_14_days = np.zeros((len(new_cases)), dtype=float)
-        risk = np.zeros((len(new_cases)), dtype=float)
-        risk_per_10 = np.zeros((len(new_cases)), dtype=float)
+       # Calculate the number of cases per day by subtracting the cumulative cases of the previous day from the current day's cumulative cases. 
+        daily_cases = np.zeros((len(dates)), dtype=int)
+        for i in range(len(dates)):
+            daily_cases[i] = region_cumulative_cases[i] - region_cumulative_cases[i - 1] if i > 0 else region_cumulative_cases[i]
+    
+        # Calculate the velocity of the spread (rho) of each day by calculating the average number of cases per day over a rolling window of 7 days. 
+        rho = np.zeros((len(dates)), dtype=float)
+        for i in range(7, len(dates)):
+            aux = daily_cases[i - 5] + daily_cases[i - 6] + daily_cases[i - 7]
+            div = 1 if aux == 0 else aux
+            rho[i] = min((daily_cases[i] + daily_cases[i - 1] + daily_cases[i - 2]) / div, 4)
+
+        mean_7_day_rate = np.zeros((len(dates)), dtype=float)
+        new_cases_14_days = np.zeros((len(dates)), dtype=float)
+        attack_rate_14_days = np.zeros((len(dates)), dtype=float)
+        risk = np.zeros((len(dates)), dtype=float)
+        risk_per_100k = np.zeros((len(dates)), dtype=float)
 
         day13 = 13
+        for i in range(day13, len(dates)):
+            new_cases_14_days[i] = np.sum(daily_cases[i - day13: i + 1])
+            mean_7_day_rate[i] = np.average(rho[i - 6:i + 1])
+            attack_rate_14_days[i] = new_cases_14_days[i] / population[region] * 100_000
+            risk[i] = new_cases_14_days[i] * mean_7_day_rate[i]
+            risk_per_100k[i] = attack_rate_14_days[i] * mean_7_day_rate[i]
 
-        for i in range(day13, len(new_cases)):
-            p_seven[i] = np.average(p[i - 6:i + 1])
-            n_14_days[i] = np.sum(new_cases[i - day13: i + 1])
-            pop = population[region[ID]]
-            a_14_days[i] = n_14_days[i] / pop * 100000
-            risk[i] = n_14_days[i] * p_seven[i]
-            risk_per_10[i] = a_14_days[i] * p_seven[i]
-
-        first_day = dia[day13]
-        last_day = dia[len(dia) - 1]
+        first_day = dates[day13]
+        last_day = dates[-1]
         first_day = first_day.replace('/', '-')
         last_day = last_day.replace('/', '-')
 
         # For last 15 days
         if last_days:
             a_14_days_solo = []
-            day13 = len(a_14_days) - last_days_time
-            first_day = dia[day13]
-            for i in range(len(a_14_days)):
-                if i >= len(a_14_days) - last_days_time:
-                    a_14_days_solo.append(a_14_days[i])
+            day13 = len(attack_rate_14_days) - last_days_time
+            first_day = dates[day13]
+            for i in range(len(attack_rate_14_days)):
+                if i >= len(attack_rate_14_days) - last_days_time:
+                    a_14_days_solo.append(attack_rate_14_days[i])
                 else:
                     a_14_days_solo.append(None)
 
-        save_path = 'static_graphic' + '/' + last_day + '-' + region[ID]
-        save_path_temp = 'static_graphic' + '/interactive_graphic/' + last_day + '-' + region[ID]
+        save_path = 'static_graphic' + '/' + last_day + '-' + region
+        save_path_temp = 'static_graphic' + '/interactive_graphic/' + last_day + '-' + region
         save_path_xlsx = 'static_graphic/xlsx/'
 
-        fig1, ax1 = plt.subplots(sharex=True)
-        del fig1
+        figure, axes = plt.subplots(sharex=True)
+        del figure
 
         if last_days:
-            ax1.plot(a_14_days,  p_seven, 'ko--', fillstyle='none',
-                        linewidth=0.5, color=(0, 0, 0, 0.15))
-            ax1.plot(a_14_days_solo,  p_seven, 'ko--',
-                        fillstyle='none', linewidth=0.5)  # For last 15 days
-            ax1.plot(a_14_days_solo[len(a_14_days_solo) - 1],
-                        p_seven[len(p_seven) - 1], 'bo')
+            axes.plot(attack_rate_14_days, mean_7_day_rate, 'o--', fillstyle='none', linewidth=0.5, color=(0, 0, 0, 0.15))
+            axes.plot(a_14_days_solo, mean_7_day_rate, 'ko--', fillstyle='none', linewidth=0.5)  # For last 15 days
+            axes.plot(a_14_days_solo[-1], mean_7_day_rate[-1], 'bo')
         else:
-            ax1.plot(a_14_days,  p_seven, 'ko--',
-                        fillstyle='none', linewidth=0.5)
-            ax1.plot(a_14_days[len(a_14_days) - 1],
-                        p_seven[len(p_seven) - 1], 'bo')
-        lim = ax1.get_xlim()
-        x = np.ones(int(lim[1]))
-        ax1.plot(x, 'k--', fillstyle='none', linewidth=0.5)
-        ax1.set_ylim(0, 4)
-        ax1.set_xlim(0, int(lim[1]))
+            axes.plot(attack_rate_14_days, mean_7_day_rate, 'ko--', fillstyle='none', linewidth=0.5)
+            axes.plot(attack_rate_14_days[-1], mean_7_day_rate[-1], 'bo')
+
+        # Set y-axis limits and add horizontal line at y=0
+        max_y = 4
+        axes.set_ylim(0, max_y)
+        _, max_x = axes.get_xlim()
+        max_x = int(max_x)
+        x = np.ones(max_x)
+        axes.plot(x, 'k--', fillstyle='none', linewidth=0.5)
 
         
-        ax1.set_ylabel('$\u03C1$ (mean of the last 7 days)')
-        ax1.set_xlabel('Attack rate per $10^5$ inh. (last 14 days)')
-        ax1.annotate(first_day,
-                        xy=(a_14_days[day13], p_seven[day13]
-                            ), xycoords='data',
-                        xytext=(len(x) - abs(len(x) / 1.5), 2.7), textcoords='data',
-                        arrowprops=dict(arrowstyle="->",
-                                        connectionstyle="arc3", linewidth=0.4),
-                        )
-        ax1.annotate(last_day,
-                        xy=(a_14_days[len(a_14_days) - 1],
-                            p_seven[len(p_seven) - 1]), xycoords='data',
-                        xytext=(len(x) - abs(len(x) / 2), 3), textcoords='data',
-                        arrowprops=dict(arrowstyle="->",
-                                        connectionstyle="arc3", linewidth=0.4),
-                        )
+        # Axes labels
+        axes.set_ylabel('$\u03C1$ (mean of the last 7 days)')
+        axes.set_xlabel('Attack rate per $10^5$ inh. (last 14 days)')
 
+        ## Add legend to the plot
+        # Colors
+        red = dict(fc=(1, 0, 0, .5), lw=0, pad=2)
+        yellow = dict(fc=(1, 1, 0, .5), lw=0, pad=2)
+        green = dict(fc=(0, 1, 0, .5), lw=0, pad=2)
+        plt.annotate('  ', (max_x - abs(max_x / 3.3), 3.8), color=(0, 0, 0), ha='left', va='center', fontsize='6', bbox=red)
+        plt.annotate('  \n', (max_x - abs(max_x / 3.3), 3.55), color=(0, 0, 0), ha='left', va='center', fontsize='6', bbox=yellow)
+        plt.annotate('  ', (max_x - abs(max_x / 3.3), 3.3), color=(0, 0, 0), ha='left', va='center', fontsize='6', bbox=green)
+
+        # Labels
+        plt.annotate(' EPG >= 100: High', (max_x - abs(max_x / 3.5), 3.8), color=(0, 0, 0), ha='left', va='center', fontsize='6', bbox=dict(fc=(0, 0, 0, 0), lw=0, pad=2))
+        plt.annotate(' 70 < EPG < 100: Moderate-high\n 30 < EPG < 70 : Moderate', (max_x - abs(max_x / 3.5), 3.55), color=(0, 0, 0), ha='left', va='center', fontsize='6', bbox=dict(fc=(0, 0, 0, 0), lw=0, pad=2))
+        plt.annotate(' EPG < 30: Low', (max_x - abs(max_x / 3.5), 3.3), color=(0, 0, 0), ha='left', va='center', fontsize='6', bbox=dict(fc=(0, 0, 0, 0), lw=0, pad=2))
+
+        # First day and last day annotations
+        axes.annotate(first_day, xy=(attack_rate_14_days[day13], mean_7_day_rate[day13]), xytext=(max_x-abs(max_x/1.5),2.7), arrowprops=dict(arrowstyle="->", connectionstyle="arc3", linewidth=0.4))
+        axes.annotate(last_day, xy=(attack_rate_14_days[-1], mean_7_day_rate[-1]), xytext=(max_x-abs(max_x/2),3), arrowprops=dict(arrowstyle="->", connectionstyle="arc3", linewidth=0.4))
         
-        bra_title = region[ID]
-        plt.title(region[ID])
-        plt.annotate(
-            ' EPG > 100: High', xy=(len(x) - abs(len(x) / 3.5), 3.8), color=(0, 0, 0),
-            ha='left', va='center', fontsize='6',
-            bbox=dict(fc=(0, 0, 0, 0), lw=0, pad=2))
-        plt.annotate(
-            " 70 < EPG < 100: Moderate-high\n"
-            " 30 < EPG < 70 : Moderate", xy=(len(x) - abs(len(x) / 3.5), 3.55), color=(0, 0, 0),
-            ha='left', va='center', fontsize='6',
-            bbox=dict(fc=(0, 0, 0, 0), lw=0, pad=2))
-        plt.annotate(
-            ' EPG < 30: Low', xy=(len(x) - abs(len(x) / 3.5), 3.3), color=(0, 0, 0),
-            ha='left', va='center', fontsize='6',
-            bbox=dict(fc=(0, 0, 0, 0), lw=0, pad=2))
-
-        plt.annotate(
-            '  ', xy=(len(x) - abs(len(x) / 3.3), 3.8), color=(0, 0, 0),
-            ha='left', va='center', fontsize='6',
-            bbox=dict(fc=(1, 0, 0, .5), lw=0, pad=2))
-        plt.annotate(
-            "  \n", xy=(len(x) - abs(len(x) / 3.3), 3.55), color=(0, 0, 0),
-            ha='left', va='center', fontsize='6',
-            bbox=dict(fc=(1, 1, 0, .5), lw=0, pad=2))
-        plt.annotate(
-            '  ', xy=(len(x) - abs(len(x) / 3.3), 3.3), color=(0, 0, 0),
-            ha='left', va='center', fontsize='6',
-            bbox=dict(fc=(0, 1, 0, .5), lw=0, pad=2))
+        plt.title(region)
             
         if ourworldindata_country is not None:
             plt.subplots_adjust(bottom=0.2)
-            text_annotate = (
-                "*The risk diagram was developed using the Our World in Data database. Last update: " + str(last_day) + ".")
+            text_annotate = "*The risk diagram was developed using the Our World in Data database. Last update: " + str(last_day) + "."
 
             plt.text(0, -1, text_annotate, fontsize=7, wrap=False)
 
-        rh = np.arange(0, int(lim[1]), 1)
-        ar = np.linspace(0, 4, 400)
+        granularity = 400
+        rh = np.arange(0, max_x, 1)
+        ar = np.linspace(0, max_y, granularity)
+        rh, ar = np.meshgrid(rh, ar)
+        epg = rh * ar
 
-        RH, AR = np.meshgrid(rh, ar)
+        # Normalize the EPG values to a range of 0-100
+        epg[epg > 100] = 100
 
-        EPG = RH * AR
-
-        for i in range(len(EPG)):
-            for j in range(len(EPG[i])):
-                if EPG[i][j] > 100:
-                    EPG[i][j] = 100
+        # Create the colormap
         c = colormap.Colormap()
         mycmap = c.cmap_linear('green(w3c)', 'yellow', 'red')
-        ax1.pcolorfast([0, int(lim[1])], [0, 4],
-                        EPG, cmap=mycmap, alpha=0.6)
+        axes.pcolorfast([0, max_x], [0, max_y], epg, cmap=mycmap, alpha=0.6)
 
-        ax1.set_aspect('auto')
+        axes.set_aspect('auto')
 
         if html:
             figt, axt = plt.subplots(sharex=True)
-            axt.pcolorfast([0, int(lim[1])], [0, 4],
-                            EPG, cmap=mycmap, alpha=0.6)
+            axt.pcolorfast([0, max_x], [0, max_y], epg, cmap=mycmap, alpha=0.6)
             axt.set_axis_off()
-            figt.savefig(save_path_temp, format='png',
-                            bbox_inches='tight', dpi=300, pad_inches=0)
-            plotly_html(a_14_days, p_seven, dia, bra_title,
-                        save_path_xlsx, save_path_temp)
+            figt.savefig(save_path_temp, format='png', bbox_inches='tight', dpi=300, pad_inches=0)
+            plotly_html(attack_rate_14_days, mean_7_day_rate, dates, region, save_path_xlsx, save_path_temp)
         else:
             plt.savefig(save_path + '.png', bbox_inches='tight', dpi=300)
             plt.close('all')
-        print(
-            "\n\nPrediction for the region of " + region[
-                ID] + " performed successfully!\nPath:" + save_path)
+        print("\n\nPrediction for the region of " + region + " performed successfully!\nPath:" + save_path)
 
+        dataTable.append([
+            region,
+            region_cumulative_cases[-1],
+            daily_cases[-1],
+            rho[-1],
+            mean_7_day_rate[-1],
+            new_cases_14_days[-1],
+            attack_rate_14_days[-1],
+            risk[-1],
+            risk_per_100k[-1]
+        ])
 
-
-        dataTable.append([region[ID], cumulative_cases[len(cumulative_cases) - 1], new_cases[len(new_cases) - 1], p[len(p) - 1], p_seven[len(
-            p_seven) - 1], n_14_days[len(n_14_days) - 1], a_14_days[len(a_14_days) - 1], risk[len(risk) - 1], risk_per_10[len(risk_per_10) - 1]])
-
-        for i in range(len(dia)):
-            dataTable_EPG.append([dia[i], region[ID], risk_per_10[i]])
+        for i in range(len(dates)):
+            dataTable_EPG.append([dates[i], region, risk_per_100k[i]])
 
     df = pd.DataFrame(dataTable, columns=['State', 'Cumulative cases', 'New cases', 'ρ', 'ρ7', 'New cases last 14 days (N14)',
                                           'New cases last 14 days per 105 inhabitants (A14)', 'Risk (N14*ρ7)',  'Risk per 10^5 (A14*ρ7)'])
