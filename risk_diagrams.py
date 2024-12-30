@@ -140,17 +140,8 @@ def plotly_html(a_14_days, p_seven, dia, bra_title, save_path, filename_bg):
 
     fig.write_html(filename_bg+'.html', include_plotlyjs="cdn")
 
-def run_risk_diagrams(region_id, file_others_cases, file_others_pop, radio_valor, ourworldindata_country):
+def run_risk_diagrams(region_id: str, plot_type: str, ourworldindata_country: str = None):
     last_days_time = 30
-    html = False
-    last_days = False
-
-    if radio_valor == 1:
-        last_days = True
-    elif radio_valor == 2:
-        html = True
-    else:
-        pass
 
     dataTable = []
     dataTable_EPG = []
@@ -161,13 +152,11 @@ def run_risk_diagrams(region_id, file_others_cases, file_others_pop, radio_valor
         'recife': {'function': run_crear_excel_recife, 'filename': 'data/cases-recife.xlsx', 'population_file': 'data/pop_recife_v1.xlsx', 'sheet_name': 'Cases'},
         'WCOTA': {'function': lambda: run_crear_excel_brasil_wcota('SP'), 'filename': 'data/cases-wcota.xlsx', 'population_file': 'data/pop_SP_v1.xlsx', 'sheet_name': 'Cases'},
         'ourworldindata': {'function': lambda: run_crear_excel_ourworldindata(ourworldindata_country), 'filename': 'data/ourworldindata.xlsx', 'population_file': 'data/pop_ourworldindata_v1.xlsx', 'sheet_name': 'Cases'},
-        'others': {'filename': file_others_cases, 'population_file': file_others_pop, 'sheet_name': 'Cases'}
     }
 
     try:
         source = data_sources[region_id]
-        if 'function' in source:
-            source['function']()
+        source['function']()
         filename = source['filename']
         filename_population = source['population_file']
         sheet_name = source['sheet_name']
@@ -221,7 +210,7 @@ def run_risk_diagrams(region_id, file_others_cases, file_others_pop, radio_valor
         last_day = last_day.replace('/', '-')
 
         # For last 15 days
-        if last_days:
+        if plot_type == "last_days":
             a_14_days_solo = []
             day13 = len(attack_rate_14_days) - last_days_time
             first_day = dates[day13]
@@ -238,7 +227,7 @@ def run_risk_diagrams(region_id, file_others_cases, file_others_pop, radio_valor
         figure, axes = plt.subplots(sharex=True)
         del figure
 
-        if last_days:
+        if plot_type == "last_days":
             axes.plot(attack_rate_14_days, mean_7_day_rate, 'o--', fillstyle='none', linewidth=0.5, color=(0, 0, 0, 0.15))
             axes.plot(a_14_days_solo, mean_7_day_rate, 'ko--', fillstyle='none', linewidth=0.5)  # For last 15 days
             axes.plot(a_14_days_solo[-1], mean_7_day_rate[-1], 'bo')
@@ -246,14 +235,13 @@ def run_risk_diagrams(region_id, file_others_cases, file_others_pop, radio_valor
             axes.plot(attack_rate_14_days, mean_7_day_rate, 'ko--', fillstyle='none', linewidth=0.5)
             axes.plot(attack_rate_14_days[-1], mean_7_day_rate[-1], 'bo')
 
-        # Set y-axis limits and add horizontal line at y=0
+        # Set y-axis limits and add horizontal line at y=1
         max_y = 4
         axes.set_ylim(0, max_y)
         _, max_x = axes.get_xlim()
         max_x = int(max_x)
         x = np.ones(max_x)
         axes.plot(x, 'k--', fillstyle='none', linewidth=0.5)
-
         
         # Axes labels
         axes.set_ylabel('$\u03C1$ (mean of the last 7 days)')
@@ -301,7 +289,7 @@ def run_risk_diagrams(region_id, file_others_cases, file_others_pop, radio_valor
 
         axes.set_aspect('auto')
 
-        if html:
+        if plot_type == "html":
             figt, axt = plt.subplots(sharex=True)
             axt.pcolorfast([0, max_x], [0, max_y], epg, cmap=mycmap, alpha=0.6)
             axt.set_axis_off()
